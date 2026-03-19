@@ -1,0 +1,160 @@
+
+<style>
+  .chart-wrap { position: relative; width: 100%; }
+  .selected-bar { cursor: pointer; }
+  .bar-label { font-size: 12px; fill: var(--color-text-secondary); }
+  h3 { font-size: 16px; font-weight: 500; color: var(--color-text-primary); margin: 0 0 4px; }
+  .subtitle { font-size: 13px; color: var(--color-text-secondary); margin: 0 0 16px; }
+  .section { margin-bottom: 28px; }
+  .metric-row { display: flex; gap: 10px; margin-bottom: 20px; }
+  .metric { background: var(--color-background-secondary); border-radius: 8px; padding: 12px 16px; flex: 1; }
+  .metric .label { font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px; }
+  .metric .value { font-size: 20px; font-weight: 500; color: var(--color-text-primary); }
+  .filter-note { font-size: 12px; color: var(--color-text-secondary); margin-top: 6px; }
+  .filter-tag { display: inline-block; background: var(--color-background-info); color: var(--color-text-info); border-radius: 6px; padding: 2px 10px; font-size: 12px; margin-left: 6px; }
+  .clear-btn { font-size: 12px; color: var(--color-text-secondary); cursor: pointer; text-decoration: underline; margin-left: 8px; }
+</style>
+
+<div style="padding: 1rem 0">
+  <div class="metric-row">
+    <div class="metric">
+      <div class="label">Total machine downtime</div>
+      <div class="value">1,030 min</div>
+    </div>
+    <div class="metric">
+      <div class="label">Worst factory</div>
+      <div class="value" style="font-size:15px">Daikibo Factory Seiko</div>
+    </div>
+    <div class="metric">
+      <div class="label">Worst machine type</div>
+      <div class="value" style="font-size:15px">LaserWelder</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Downtime per factory <span id="filter-tag" style="display:none" class="filter-tag"></span><span id="clear-btn" class="clear-btn" style="display:none" onclick="clearFilter()">✕ clear</span></h3>
+    <p class="subtitle">Click a bar to filter the machine chart below</p>
+    <div class="chart-wrap" style="height: 220px;">
+      <canvas id="factoryChart"></canvas>
+    </div>
+    <p class="filter-note">Values represent total minutes of potential downtime (10 min per unhealthy status message)</p>
+  </div>
+
+  <div class="section">
+    <h3>Downtime per device type <span id="location-label"></span></h3>
+    <p class="subtitle" id="device-subtitle">Across all factories</p>
+    <div class="chart-wrap" style="height: 280px;">
+      <canvas id="deviceChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+const textColor = isDark ? '#c2c0b6' : '#3d3d3a';
+const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+
+const factories = ['daikibo-berlin', 'daikibo-factory-meiyo', 'daikibo-factory-seiko', 'daikibo-shenzhen'];
+const factoryLabels = ['Daikibo Berlin', 'Factory Meiyo', 'Factory Seiko', 'Daikibo Shenzhen'];
+const factoryData = [20, 110, 480, 420];
+
+const allDevices = ['AirWrench','CNC','ConveyorBelt','Furnace','HeavyDutyDrill','LaserCutter','LaserWelder','MetalPress','SpotWelder'];
+
+// Per-factory device breakdown
+const deviceByFactory = {
+  'daikibo-berlin': [0,0,0,0,0,0,0,20,0],
+  'daikibo-factory-meiyo': [0,10,10,0,0,0,0,0,0],
+  'daikibo-factory-seiko': [0,0,0,0,0,0,480,0,0],
+  'daikibo-shenzhen': [0,0,0,20,70,430,0,0,10],
+};
+const allDeviceData = [0,10,10,20,70,430,480,20,10];
+
+let selectedFactory = null;
+const highlightColor = '#185FA5';
+const dimColor = isDark ? 'rgba(55,138,221,0.25)' : 'rgba(55,138,221,0.3)';
+const normalColor = isDark ? 'rgba(55,138,221,0.75)' : '#3B8BD4';
+const selectedColor = '#185FA5';
+
+const factoryChart = new Chart(document.getElementById('factoryChart'), {
+  type: 'bar',
+  data: {
+    labels: factoryLabels,
+    datasets: [{
+      label: 'Downtime (min)',
+      data: factoryData,
+      backgroundColor: factoryData.map((_, i) => i === 2 ? selectedColor : normalColor),
+      borderRadius: 4,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: textColor, font: { size: 12 } }, grid: { display: false } },
+      y: { ticks: { color: textColor, font: { size: 12 } }, grid: { color: gridColor }, title: { display: true, text: 'Minutes', color: textColor, font: { size: 11 } } }
+    },
+    onClick(_, els) {
+      if (!els.length) return;
+      const idx = els[0].index;
+      if (selectedFactory === factories[idx]) { clearFilter(); return; }
+      selectedFactory = factories[idx];
+      updateCharts(idx);
+    }
+  }
+});
+
+const deviceChart = new Chart(document.getElementById('deviceChart'), {
+  type: 'bar',
+  data: {
+    labels: allDevices,
+    datasets: [{
+      label: 'Downtime (min)',
+      data: allDeviceData,
+      backgroundColor: normalColor,
+      borderRadius: 4,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: textColor, font: { size: 11 }, maxRotation: 35 }, grid: { display: false } },
+      y: { ticks: { color: textColor, font: { size: 12 } }, grid: { color: gridColor }, title: { display: true, text: 'Minutes', color: textColor, font: { size: 11 } } }
+    }
+  }
+});
+
+function updateCharts(idx) {
+  const fi = factories[idx];
+  const label = factoryLabels[idx];
+  factoryChart.data.datasets[0].backgroundColor = factoryData.map((_, i) => i === idx ? selectedColor : dimColor);
+  factoryChart.update();
+  deviceChart.data.datasets[0].data = deviceByFactory[fi];
+  deviceChart.data.datasets[0].backgroundColor = deviceByFactory[fi].map(v => v > 0 ? selectedColor : dimColor);
+  deviceChart.update();
+  document.getElementById('filter-tag').textContent = label;
+  document.getElementById('filter-tag').style.display = 'inline-block';
+  document.getElementById('clear-btn').style.display = 'inline';
+  document.getElementById('device-subtitle').textContent = 'Filtered: ' + label;
+}
+
+function clearFilter() {
+  selectedFactory = null;
+  factoryChart.data.datasets[0].backgroundColor = factoryData.map((_, i) => i === 2 ? selectedColor : normalColor);
+  factoryChart.update();
+  deviceChart.data.datasets[0].data = allDeviceData;
+  deviceChart.data.datasets[0].backgroundColor = normalColor;
+  deviceChart.update();
+  document.getElementById('filter-tag').style.display = 'none';
+  document.getElementById('clear-btn').style.display = 'none';
+  document.getElementById('device-subtitle').textContent = 'Across all factories';
+}
+
+// Pre-select Seiko as the worst factory on load
+updateCharts(2);
+</script>
